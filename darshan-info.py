@@ -12,7 +12,6 @@ import seaborn as sns
 import os
 
 def merge (path) :
-
     files = os.listdir(path)
     nprocs = len(files)
     dxt_posix = None
@@ -39,6 +38,7 @@ def merge (path) :
 
     duration = end - start
     return dxt_posix, nprocs, duration, path
+
 
 def dxt_posix_sorted_RW (path, seps='Rank', n=50) :
 
