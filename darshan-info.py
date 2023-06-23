@@ -147,28 +147,12 @@ def _dxt_posix_sorted_RW (sep, n, dxt_posix, step, Y_size) :
     write = sp.coo_matrix((v_write, (x_write, y_write)), shape=shape)
     read_bw = sp.coo_matrix((v_read_bw, (x_read, y_read)), shape=shape)
     write_bw = sp.coo_matrix((v_write_bw, (x_write, y_write)), shape=shape)
-
-    # v_read = np.array(v_read)
-    # v_read_bw = np.array(v_read_bw)
-    # pprint(v_read)
-    # pprint(v_read_bw)
-    # pprint(v_read_bw / v_read)
-    # read_bw_count  = sp.coo_matrix((v_read_bw / v_read, (x_read, y_read)), shape=shape)
-    # v_write = np.array(v_write)
-    # v_write_bw = np.array(v_write_bw)
-    # write_bw_count  = sp.coo_matrix((v_write_bw / v_write, (x_write, y_write)), shape=shape)
-
-
-    # pprint(read_bw.data)
-    # pprint(read_bw_count.data)
     
     read.sum_duplicates()
     write.sum_duplicates()
     read_bw.sum_duplicates()
     write_bw.sum_duplicates()
-    # read_bw_count.sum_duplicates()
-    # write_bw_count.sum_duplicates()
-    
+
     v_read_bw_count = read_bw.data / read.data
     v_write_bw_count = write_bw.data / write.data
     read_bw_count  = sp.coo_matrix((v_read_bw_count, (read.row, read.col)), shape=shape)
@@ -188,37 +172,37 @@ def plot(read, write, read_bw, write_bw, read_bw_count, write_bw_count, duration
     ax0.set_title('Reads')
     ax0.set_ylabel(sep)
     ax0.grid(True)
-    im_read = ax0.imshow(read.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax, interpolation='nearest', norm='log')
+    im_read = ax0.imshow(read.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax, interpolation='nearest', norm='linear')
     # im_read = sns.jointplot(x=read.col, y=read.row, kind="hist", space=0.05, ax=ax0)
     fig.colorbar(im_read, ax=ax0)
 
     ax1.set_title('Writes')
     ax1.grid(True)
-    im_write = ax1.imshow(write.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax, interpolation='nearest', norm='log')
+    im_write = ax1.imshow(write.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax, interpolation='nearest', norm='linear')
 
     ax2.set_title('Reads Bandwidth')
     ax2.set_xlabel('Time (s)')
     ax2.set_ylabel(sep)
     ax2.grid(True)
-    im_read_bw = ax2.imshow(read_bw.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw, interpolation='nearest', norm='log')
+    im_read_bw = ax2.imshow(read_bw.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw, interpolation='nearest', norm='linear')
     fig.colorbar(im_read_bw, ax=ax2)
 
     ax3.set_title('Writes Bandwidth')
     ax3.set_xlabel('Time (s)')
     ax3.grid(True)
-    im_write_bw = ax3.imshow(write_bw.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw, interpolation='nearest', norm='log')
+    im_write_bw = ax3.imshow(write_bw.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw, interpolation='nearest', norm='linear')
 
     ax4.set_title('Reads Bandwidth over Counts')
     ax4.set_xlabel('Time (s)')
     ax4.set_ylabel(sep)
     ax4.grid(True)
-    im_read_bw_count = ax4.imshow(read_bw_count.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw_count, interpolation='nearest', norm='log')
+    im_read_bw_count = ax4.imshow(read_bw_count.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw_count, interpolation='nearest', norm='linear')
     fig.colorbar(im_read_bw_count, ax=ax4)
 
     ax5.set_title('Writes Bandwidth over Counts')
     ax5.set_xlabel('Time (s)')
     ax5.grid(True)
-    im_write_bw_count = ax5.imshow(write_bw_count.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw_count, interpolation='nearest', norm='log')
+    im_write_bw_count = ax5.imshow(write_bw_count.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw_count, interpolation='nearest', norm='linear')
 
     fig.tight_layout()
     fig.subplots_adjust(top=0.9)
