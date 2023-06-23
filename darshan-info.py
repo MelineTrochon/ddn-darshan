@@ -11,85 +11,131 @@ import array
 import seaborn as sns
 import os
 
-def merge (path) :
+def usage():
+    print("Usage: python darshan-info.py <Darshan file or repository> [Options]")
+    print("If no options, then all the options will be done")
+    print("Options :")
+    print("dxt_posix : Shows the I/O grouped by file or rank, as a function of time")
+    print("\tit can be followed by : Rank, File, hostname or all, default is all")
+    return
+
+
+def dxt_posix_heatmap(i, argv):
+    all_groups = {'rank', 'file', 'hostname'}
+    groups = {}
+    n=50
+    path = argv[1]
+    t = len(argv)
+    output = "output/" + path.split('/')[-1].split('.')[0]
+    output_bool = False
+    norm_bool = False
+    norm = 'linear'
+
+
+    for t in range(i+1, len(argv)):
+        
+        if output_bool:
+            output = argv[t]
+            output_bool = False
+            continue
+
+        if norm_bool:
+            norm = argv[t]
+            norm_bool = False
+            continue
+
+        if argv[t] in all_groups:
+            groups += {argv[t]}
+            continue
+        
+        if argv[t].isdigit() :
+            n = argv[t]
+            continue
+        
+        if argv[t] == '-output':
+            output_bool = True
+            continue
+
+        if argv[t] == '-norm':
+            norm_bool = True
+            continue
+        
+        break
+
+    if len(groups) == 0:
+        groups = all_groups
+    
+    print()
+    print("="*100 + "\nStart reading dxt records sorted by {}\n".format(groups))
+
+    start_t = time.time()
+    if os.path.isdir(path):
+        dxt_posix, nprocs, start, end = merge_darshan_logs(path)
+    
+    elif path.split('.')[-1] == 'darshan' :
+        dxt_posix, nprocs, start, end = darshan_file(path)
+    
+    else :
+        print("The given path could not be read")
+        exit(0)
+    print("Read and convert all the data in %.3f sec\n"%(time.time() - start_t))
+
+    step = (end - start).total_seconds() / n
+    for group in groups :
+        plot_dxt_posix_heatmap(dxt_posix, group, nprocs, n, step, norm, output)
+    return t
+
+
+def darshan_file(file) :
+
+    if file.split('.')[-1] != 'darshan' :
+        print("The file {} is not a darshan log and will be ignored".format(f))
+        return
+
+    report = darshan.DarshanReport(file, read_all=False)
+
+    if 'DXT_POSIX' not in report.modules:
+        print("The file {} does not contain dxt_posix records".format(f))
+        return
+    
+    print("Reading the file {}".format(file), end='\t')
+    start_t = time.time()
+    report.read_all_dxt_records()
+    print("read dxt_records in %.3f sec"%(time.time() - start_t), end='\t')
+
+    start_t = time.time()
+    dxt_posix = report.records['DXT_POSIX'].to_df()
+    print("convert to df in %.3f sec"%(time.time() - start_t))
+    
+    return dxt_posix, report.metadata['job']['nprocs'], report.start_time, report.end_time
+
+
+def merge_darshan_logs(path) :
     files = os.listdir(path)
-    nprocs = len(files)
     dxt_posix = None
     start = None
     end = None
+    nprocs = 0
 
-    for i, f in enumerate(files) :
-        if f.split('.')[-1] != 'darshan' :
-            print("The file {} is not a darshan log thus is ignored".format(f))
-            continue
-        report = darshan.DarshanReport(path + '/' + f, read_all=False)
-
-        if not 'DXT_POSIX' in report.modules :
-            print("The file {} does not contain dxt_posix records, thus is ignored".format(f))
-            continue
-        report.read_all_dxt_records()
-        report_dxt_posix = report.records['DXT_POSIX'].to_df()
-        for line in report_dxt_posix :
-            line['rank'] = i
+    for f in files:
+        
+        report_dxt_posix, report_nprocs, report_start, report_end = darshan_file(path + '/' + f)
+        for line in report_dxt_posix:
+            line['rank'] += nprocs
+        
+        nprocs += report_nprocs
         dxt_posix = dxt_posix + report_dxt_posix if dxt_posix is not None else report_dxt_posix
 
-        start = report.start_time if not(start) or report.start_time < start else start
-        end = report.end_time if not(end) or report.end_time > end else end
+        start = report_start if start is None or report_start < start else start
+        end = report_end if end is None or report_end > end else end
 
-    duration = end - start
-    return dxt_posix, nprocs, duration, path
+    return dxt_posix, nprocs, start, end
 
 
-def dxt_posix_sorted_RW (path, seps='Rank', n=50) :
+def plot_dxt_posix_heatmap(dxt_posix, group, nprocs, n, step, norm, output):
 
-    print()
-    print("=="*20)
-    print("Start reading dxt records sorted by {}".format(seps))
-
-    if path.split('.')[-1] == 'darshan' :
-        report = darshan.DarshanReport(path)
-
-        if not 'DXT_POSIX' in report.modules :
-            print("The file does not contain dxt_posix records")
-            exit(1)
-
-        if not 'DXT_POSIX' in report.records.keys() :
-            start = time.time()
-            report.read_all_dxt_records()
-            print("Read all dxt records in %.3f sec"%(time.time() - start))
-    
-        start = time.time()
-        dxt_posix = report.records['DXT_POSIX'].to_df()
-        print("Convert dxt records to dataframe in %.3f sec"%(time.time() - start))
-
-        nprocs = report.metadata['job']['nprocs']
-        duration = report.end_time - report.start_time
-        output = report.filename.split('/')[-1].split('.')[0] 
-
-    else :
-        start = time.time()
-        dxt_posix, nprocs, duration, output = merge(path)
-        print("Merge dxt records in %.3f sec"%(time.time() - start))
-
-    step = int(duration.total_seconds()) / n
-    for sep in seps :
-        if sep == 'Rank' :
-            Y_size = nprocs
-        if sep == 'File' :
-            Y_size = len(dxt_posix)
-
-        start = time.time()
-        read, write, read_bw, write_bw, read_bw_count, write_bw_count = _dxt_posix_sorted_RW (sep, n, dxt_posix, step, Y_size)
-        print("Create sparse matrices in %.3f sec"%(time.time() - start))
-
-        start = time.time()
-        plot(read, write, read_bw, write_bw, read_bw_count, write_bw_count, duration, Y_size, output, sep)
-        print("Plot in %.3f sec"%(time.time() - start))
-    return
-
-def _dxt_posix_sorted_RW (sep, n, dxt_posix, step, Y_size) :
-
-    shape = (Y_size, n + 1)
+    print("Plotting the heatmap for the group {}".format(group))
+    start_t = time.time()
     x_read = array.array('I')
     y_read = array.array('I')
     x_write = array.array('I')
@@ -104,35 +150,35 @@ def _dxt_posix_sorted_RW (sep, n, dxt_posix, step, Y_size) :
     idx_prec_w = -1
     i_prec_w = -1
 
-    def incrementation(line, step, i, v, v_bw, x, y, i_prec, idx_prec) :
+    if group == 'hostname':
+        host = {}
+
+    def incrementation(line, step, i, v, v_bw, x, y, i_prec, idx_prec):
+        incr = 0
         idx = math.floor(line[3] / step)
         length = round((line[3] - line[2]) / 2) + 1
-        loop = True
-        if idx == idx_prec and i == i_prec :
-            loop = False
-            for it in range(length) :
-                if x[-1 - it] == i and y[-1 - it] == idx :
-                    v[-1 - it] += 1
-                    v_bw[-1 - it] += int(line[1] / length)
-                else :
-                    length = length - it
-                    loop = True
-                    break
+        for it in range(length) :
+            x.append(i)
+            y.append(idx - it)
+            v.append(1)
+            v_bw.append(int(line[1] / length))
+        return
 
-        if loop :
-            for it in range(length) :
-                x.append(i)
-                y.append(idx - it)
-                v.append(1)
-                v_bw.append(int(line[1] / length))
-            i_prec = i
-            idx_prec = idx
-
+    i = 0
     for it, e in enumerate(dxt_posix):
-        if sep == 'Rank' :
+        if group == 'rank' :
             i = e['rank']
-        if sep == 'File' :
+        elif group == 'file' :
             i = it
+        elif group == 'hostname' :
+            if e['hostname'] not in host :
+                host[e['hostname']] = len(host)
+            else :
+                i = host[e['hostname']]
+        else:
+            print("The group {} is not valid".format(group))
+            exit(0)
+        
         if not e['read_segments'].empty:
             df = e['read_segments']
             for line in df.values:
@@ -142,119 +188,89 @@ def _dxt_posix_sorted_RW (sep, n, dxt_posix, step, Y_size) :
             df = e['write_segments']
             for line in df.values:
                 incrementation(line, step, i, v_write, v_write_bw, x_write, y_write, i_prec_w, idx_prec_w)
+
+    if group == 'rank' :
+        Y_size = nprocs
+    elif group == 'file' :
+        Y_size = len(dxt_posix)
+    elif group == 'hostname' :
+        Y_size = len(host)
+    else:
+        print("The group {} is not valid".format(group))
+        exit(0)
     
-    read = sp.coo_matrix((v_read, (x_read, y_read)), shape=shape)
-    write = sp.coo_matrix((v_write, (x_write, y_write)), shape=shape)
-    read_bw = sp.coo_matrix((v_read_bw, (x_read, y_read)), shape=shape)
-    write_bw = sp.coo_matrix((v_write_bw, (x_write, y_write)), shape=shape)
-    
-    read.sum_duplicates()
-    write.sum_duplicates()
-    read_bw.sum_duplicates()
-    write_bw.sum_duplicates()
+    shape = (Y_size, n + 1)
 
-    v_read_bw_count = read_bw.data / read.data
-    v_write_bw_count = write_bw.data / write.data
-    read_bw_count  = sp.coo_matrix((v_read_bw_count, (read.row, read.col)), shape=shape)
-    write_bw_count  = sp.coo_matrix((v_write_bw_count, (write.row, write.col)), shape=shape)
+    def sparse_matrix(x, y, v, v_bw, shape=shape):
+        mat = sp.coo_matrix((v, (x, y)), shape=shape)
+        mat_bw = sp.coo_matrix((v_bw, (x, y)), shape=shape)
+        mat.sum_duplicates()
+        mat_bw.sum_duplicates()
 
-    return read, write, read_bw, write_bw, read_bw_count, write_bw_count
+        v_bw_count = mat_bw.data / mat.data
+        mat_bw_count = sp.coo_matrix((v_bw_count, (mat.row, mat.col)), shape=shape)
+        return mat, mat_bw, mat_bw_count
 
+    read, read_bw, read_bw_count = sparse_matrix(x_read, y_read, v_read, v_read_bw)
+    write, write_bw, write_bw_count = sparse_matrix(x_write, y_write, v_write, v_write_bw)
 
-def plot(read, write, read_bw, write_bw, read_bw_count, write_bw_count, duration, Y_size, output, sep) :
-    fig, ((ax0, ax1), (ax2, ax3), (ax4, ax5)) = plt.subplots(3, 2, sharex=True, sharey='row', figsize=(7, 8))
+    print("done the sparses matrices in %.3f sec"%(time.time() - start_t))
+    start_t = time.time()
+
+    fig, axs = plt.subplots(3, 2, figsize=(7, 8))
     vmax = max(read.max(), write.max())
     vmax_bw = max(read_bw.max(), write_bw.max())
     vmax_bw_count = max(read_bw_count.max(), write_bw_count.max())
-    extent = [0, int(duration.total_seconds()), 0, Y_size]
-    # output = (report.filename.split('/')[-1]).split('.')[-2]
+    extent = [0, step * n, 0, Y_size]
 
-    ax0.set_title('Reads')
-    ax0.set_ylabel(sep)
-    ax0.grid(True)
-    im_read = ax0.imshow(read.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax, interpolation='nearest', norm='linear')
-    # im_read = sns.jointplot(x=read.col, y=read.row, kind="hist", space=0.05, ax=ax0)
-    fig.colorbar(im_read, ax=ax0)
+    def plot_heatmap(mat, ax, title, vmax=vmax, extent=extent, norm=norm):
+        ax.set_title(title)
+        ax.grid(True)
+        return ax.imshow(mat.toarray(), interpolation='nearest', aspect='auto', origin='lower', cmap='Reds', vmax=vmax, extent=extent, norm=norm)
 
-    ax1.set_title('Writes')
-    ax1.grid(True)
-    im_write = ax1.imshow(write.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax, interpolation='nearest', norm='linear')
+    plot_heatmap(read, axs[0,0], 'Read')
+    plot_heatmap(write, axs[0,1], 'Write')
+    plot_heatmap(read_bw, axs[1,0], 'Read BW', vmax=vmax_bw)
+    plot_heatmap(write_bw, axs[1,1], 'Write BW', vmax=vmax_bw)
+    plot_heatmap(read_bw_count, axs[2,0], 'Read BW count', vmax=vmax_bw_count)
+    plot_heatmap(write_bw_count, axs[2,1], 'Write BW count', vmax=vmax_bw_count)
 
-    ax2.set_title('Reads Bandwidth')
-    ax2.set_xlabel('Time (s)')
-    ax2.set_ylabel(sep)
-    ax2.grid(True)
-    im_read_bw = ax2.imshow(read_bw.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw, interpolation='nearest', norm='linear')
-    fig.colorbar(im_read_bw, ax=ax2)
-
-    ax3.set_title('Writes Bandwidth')
-    ax3.set_xlabel('Time (s)')
-    ax3.grid(True)
-    im_write_bw = ax3.imshow(write_bw.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw, interpolation='nearest', norm='linear')
-
-    ax4.set_title('Reads Bandwidth over Counts')
-    ax4.set_xlabel('Time (s)')
-    ax4.set_ylabel(sep)
-    ax4.grid(True)
-    im_read_bw_count = ax4.imshow(read_bw_count.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw_count, interpolation='nearest', norm='linear')
-    fig.colorbar(im_read_bw_count, ax=ax4)
-
-    ax5.set_title('Writes Bandwidth over Counts')
-    ax5.set_xlabel('Time (s)')
-    ax5.grid(True)
-    im_write_bw_count = ax5.imshow(write_bw_count.toarray(), cmap='Reds', aspect='auto', extent=extent, origin='lower', vmax=vmax_bw_count, interpolation='nearest', norm='linear')
-
+    fig.colorbar(axs[0,0].get_images()[0], ax=axs[0,0])
+    fig.colorbar(axs[1,0].get_images()[0], ax=axs[1,0])
+    fig.colorbar(axs[2,0].get_images()[0], ax=axs[2,0])
+    axs[0,0].set_ylabel(group)
+    axs[1,0].set_ylabel(group)
+    axs[2,0].set_ylabel(group)
+    axs[2,0].set_xlabel('Time (s)')
+    axs[2,1].set_xlabel('Time (s)')
     fig.tight_layout()
-    fig.subplots_adjust(top=0.9)
-    fig.suptitle('I/O sorted by {} as a function of time'.format(sep))
-    # plt.show()
-    plt.savefig('{}_dxt_posix_{}.png'.format(output, sep))
+    fig.savefig(output + '_' + group + '.png', dpi=300)
+    print("done the plots in %.3f sec\n"%(time.time() - start_t))
     return
 
 
-def main ():
+def main():
     argv = sys.argv
-    if len(argv) < 2:
-        print("Usage: python script.py <darshan log file>, see -h or --help for more information")
-        exit(1)
+    if len(argv) < 2 or argv[1] == '-h' or argv[1] == '--help':
+        usage()
+        return 0
     
-    if argv[1] == '-h' or argv[1] == '--help' :
-        print("Usage: python script.py <darshan log file> [Options]")
-        print()
-        print("Options:")
-        print("dxt_posix : Shows the I/O sorted by file or rank, as a function of time")
-        print("\tfollowed by : Rank, File or All, nothing is equivalent to all")
-        exit(0)
-    
-    path = argv[1]
+    if len(argv) == 2:
+        start_t = time.time()
+        dxt_posix_heatmap(2, argv)
+        print("dxt_posix in %.3f sec\n"%(time.time() - start_t))
 
-    if path.split('.')[-1] == 'darshan' :
-        report = darshan.DarshanReport(path, read_all=False)
-        report.info()
-
-    if len(argv) == 2 :
-        dxt_posix_sorted_RW(path, {'Rank', 'File'})
-
-    for i in range(2, len(argv)) :
+    i = 2
+    while i < len(argv):
 
         if argv[i] == 'dxt_posix' :
+            start_t = time.time()
+            i = dxt_posix_heatmap(i, argv)
+            print("dxt_posix in %.3f sec\n"%(time.time() - start_t))
+        
+        else : 
+            print("The option " + str(argv[i]) + " is not recognized")
 
-            n=50
-            start_dxt_posix = time.time()
-            if i + 1 >= len(argv) or argv[i+1] == 'All' :
-                seps = {'Rank', 'File'}
-
-            elif argv[i+1] == 'Rank' or argv[i+1] == 'File' :
-                seps = {argv[i+1]}
-                i += 1
-            
-            if argv[i+2] == '-n' :
-                n = int(argv[i+3])
-                i += 2
-            
-            print(n)
-            dxt_posix_sorted_RW(path, seps, n)
-
-            print("dxt_posix in %.3f sec"%(time.time() - start_dxt_posix))
+        i += 1
 
 main()

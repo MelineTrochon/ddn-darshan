@@ -12,6 +12,7 @@ import seaborn as sns
 import os
 
 def usage():
+    """Print the usage of the script"""
     print("Usage: python darshan-info.py <Darshan file or repository> [Options]")
     print("If no options, then all the options will be done")
     print("Options :")
@@ -20,9 +21,31 @@ def usage():
     return
 
 
+def max_count_length(dxt_posix, n):
+    """Return the max count and length of the dxt_posix records"""
+    max_count = 0
+    max_length = 0
+    for e in dxt_posix:
+        max_count = max(max_count, e['write_count'], e['read_count'])
+        max_length = n
+    return max_count, max_length
+
+
+def get_host(dxt_posix):
+    """Return the number of hosts and a dictionnary to convert hostname to a number"""
+    host = {}
+    Y_size = 0
+    for e in dxt_posix:
+        if e['hostname'] not in host:
+            host[e['hostname']] = Y_size
+            Y_size += 1
+    return Y_size, host
+
+
 def dxt_posix_heatmap(i, argv):
+    """Plot the heatmap of the dxt_posix records"""
     all_groups = {'rank', 'file', 'hostname'}
-    groups = {}
+    groups = list()
     n=50
     path = argv[1]
     t = len(argv)
@@ -31,7 +54,7 @@ def dxt_posix_heatmap(i, argv):
     norm_bool = False
     norm = 'linear'
 
-
+    # Parse the arguments of argv 
     for t in range(i+1, len(argv)):
         
         if output_bool:
@@ -68,6 +91,7 @@ def dxt_posix_heatmap(i, argv):
     print()
     print("="*100 + "\nStart reading dxt records sorted by {}\n".format(groups))
 
+    # Read the dxt_posix records
     start_t = time.time()
     if os.path.isdir(path):
         dxt_posix, nprocs, start, end = merge_darshan_logs(path)
@@ -80,6 +104,7 @@ def dxt_posix_heatmap(i, argv):
         exit(0)
     print("Read and convert all the data in %.3f sec\n"%(time.time() - start_t))
 
+    # Plot the heatmap
     step = (end - start).total_seconds() / n
     for group in groups :
         plot_dxt_posix_heatmap(dxt_posix, group, nprocs, n, step, norm, output)
@@ -87,7 +112,7 @@ def dxt_posix_heatmap(i, argv):
 
 
 def darshan_file(file) :
-
+    """Return the dxt_posix records of a darshan file"""
     if file.split('.')[-1] != 'darshan' :
         print("The file {} is not a darshan log and will be ignored".format(f))
         return
@@ -111,6 +136,7 @@ def darshan_file(file) :
 
 
 def merge_darshan_logs(path) :
+    """Return the dxt_posix records of a darshan repository"""
     files = os.listdir(path)
     dxt_posix = None
     start = None
@@ -133,79 +159,76 @@ def merge_darshan_logs(path) :
 
 
 def plot_dxt_posix_heatmap(dxt_posix, group, nprocs, n, step, norm, output):
+    """Compute sparses matrices then plot the heatmap of the dxt_posix records"""
 
     print("Plotting the heatmap for the group {}".format(group))
     start_t = time.time()
-    x_read = array.array('I')
-    y_read = array.array('I')
-    x_write = array.array('I')
-    y_write = array.array('I')
-    v_read = array.array('I')
-    v_write = array.array('I')
-    v_read_bw = array.array('L')
-    v_write_bw = array.array('L')
+    max_count, max_length = max_count_length(dxt_posix, n)
+    if group == 'rank' :
+        Y_size = nprocs
+    elif group == 'file':
+        Y_size = len(dxt_posix)
+    elif group == 'hostname' :
+        Y_size, host = get_host(dxt_posix)
+    else:
+        print("The group {} is not valid".format(group))
+        exit(0)
 
-    idx_prec_r = -1
-    i_prec_r = -1
-    idx_prec_w = -1
-    i_prec_w = -1
+    x_read = np.zeros((len(dxt_posix), max_count, max_length), dtype=np.int32)
+    y_read = np.zeros((len(dxt_posix), max_count, max_length), dtype=np.int32)
+    x_write = np.zeros((len(dxt_posix), max_count, max_length), dtype=np.int32)
+    y_write = np.zeros((len(dxt_posix), max_count, max_length), dtype=np.int32)
+    v_read = np.zeros((len(dxt_posix), max_count, max_length), dtype=np.int64)
+    v_write = np.zeros((len(dxt_posix), max_count, max_length), dtype=np.int64)
+    v_read_bw = np.zeros((len(dxt_posix), max_count, max_length), dtype=np.int64)
+    v_write_bw = np.zeros((len(dxt_posix), max_count, max_length), dtype=np.int64)
 
-    if group == 'hostname':
-        host = {}
 
-    def incrementation(line, step, i, v, v_bw, x, y, i_prec, idx_prec):
-        incr = 0
+    def incrementation(line, it_posix, it_line, v, v_bw, x, y, i, step):
         idx = math.floor(line[3] / step)
         length = round((line[3] - line[2]) / 2) + 1
         for it in range(length) :
-            x.append(i)
-            y.append(idx - it)
-            v.append(1)
-            v_bw.append(int(line[1] / length))
-        return
+            x[it_posix, it_line, it] = i
+            y[it_posix, it_line, it] = idx - it
+            v[it_posix, it_line, it] = 1
+            v_bw[it_posix, it_line, it] = int(line[1] / length)
+        return length
 
     i = 0
-    for it, e in enumerate(dxt_posix):
+    max_length = 0
+    for it_posix, e in enumerate(dxt_posix):
+
         if group == 'rank' :
             i = e['rank']
         elif group == 'file' :
-            i = it
+            i = it_posix
         elif group == 'hostname' :
-            if e['hostname'] not in host :
-                host[e['hostname']] = len(host)
-            else :
-                i = host[e['hostname']]
+            i = host[e['hostname']]
         else:
             print("The group {} is not valid".format(group))
             exit(0)
         
         if not e['read_segments'].empty:
             df = e['read_segments']
-            for line in df.values:
-                incrementation(line, step, i, v_read, v_read_bw, x_read, y_read, i_prec_r, idx_prec_r)
+            for it_line, line in enumerate(df.values):
+                length = incrementation(line, it_posix, it_line, v_read, v_read_bw, x_read, y_read, i, step)
+                max_length = length if length > max_length else max_length
 
         if not e['write_segments'].empty:
             df = e['write_segments']
-            for line in df.values:
-                incrementation(line, step, i, v_write, v_write_bw, x_write, y_write, i_prec_w, idx_prec_w)
-
-    if group == 'rank' :
-        Y_size = nprocs
-    elif group == 'file' :
-        Y_size = len(dxt_posix)
-    elif group == 'hostname' :
-        Y_size = len(host)
-    else:
-        print("The group {} is not valid".format(group))
-        exit(0)
-    
+            for it_line, line in enumerate(df.values):
+                length = incrementation(line, it_posix, it_line, v_write, v_write_bw, x_write, y_write, i, step)
+                max_length = length if length > max_length else max_length
+  
     shape = (Y_size, n + 1)
-
+    print("max_length = {}".format(max_length))
     def sparse_matrix(x, y, v, v_bw, shape=shape):
-        mat = sp.coo_matrix((v, (x, y)), shape=shape)
-        mat_bw = sp.coo_matrix((v_bw, (x, y)), shape=shape)
+        mat = sp.coo_matrix((v.flatten(), (x.flatten(), y.flatten())), shape=shape)
+        mat_bw = sp.coo_matrix((v_bw.flatten(), (x.flatten(), y.flatten())), shape=shape)
         mat.sum_duplicates()
         mat_bw.sum_duplicates()
+        mat.eliminate_zeros()
+        mat_bw.eliminate_zeros()
 
         v_bw_count = mat_bw.data / mat.data
         mat_bw_count = sp.coo_matrix((v_bw_count, (mat.row, mat.col)), shape=shape)
