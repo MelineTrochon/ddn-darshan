@@ -7,7 +7,7 @@ This class is used to read a Darshan file and extract the information, it is use
 
 
 class DarshanFile:
-    def __init__(self, f):
+    def __init__(self, f): 
         self.file = f.split("/")[-1]
         self.report = darshan.DarshanReport(f, read_all=False)
         self.nprocs = self.report.metadata["job"]["nprocs"]
