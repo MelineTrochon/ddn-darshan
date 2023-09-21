@@ -67,7 +67,7 @@ class FileNbRankPerSec:
     def to_heatmap(self, info):
         fig, axs = plt.subplots(1, 1)
         fig.suptitle(
-            "Heatmap of the number of rank {}ing on the same file".format(info.op)
+            "Heatmap of the number of {}s on the same file".format(info.op)
         )
         extent = [0, info.duration, 0, info.len_dxt_posix]
         vmax = max(self.mat.data) if len(self.mat.data) > 0 else 0
@@ -86,6 +86,8 @@ class FileNbRankPerSec:
             )
             ax.set_title(title)
             ax.grid(True)
+            ax.set_xlabel("Time ({} s)".format(info.step))
+            ax.set_ylabel("File")
 
         plot_heatmap(self, axs, str(info.op))
         fig.colorbar(axs.images[0], ax=axs)
